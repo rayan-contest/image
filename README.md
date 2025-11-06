@@ -9,7 +9,6 @@ Installation
 
 To install the Rayan World Finals contest image, follow the instructions below:
 
-  * install Ubuntu 24.04 LTS Desktop on your system
-  * create a user named ``rayan``
-  * run ``sudo bash install.sh``
-
+* Install Xubuntu 24.04 LTS Desktop on your system
+* Create a user named ``rayan``
+* Run ``sudo bash install.sh``

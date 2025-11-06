@@ -1,11 +1,16 @@
 #!/bin/bash
 
-# Bash script for building the contest image for Rayan World Finals
-# Version: 1.0
+# Bash script for building the Rayan World Finals 2025 contest PC image
+# Meant to be run on a minimal install of Xubuntu 24.04 LTS (64-bit)
+# Version: 1.6
 
-set -xe
+# ----- TODO manually after script -----
+# Disable Swap
+# Set Wallpaper
 
-if [ -z $LIVE_BUILD ]
+set -xeuo pipefail
+
+if [ -z "$LIVE_BUILD" ]
 then
     export USER=rayan
     export HOME=/home/$USER
@@ -15,91 +20,98 @@ else
 fi
 
 
-# ----- Initialization -----
+# ----- Initilization -----
 
-cat << EOF >/etc/apt/sources.list
-deb http://archive.ubuntu.com/ubuntu/ bionic main restricted universe
-deb http://security.ubuntu.com/ubuntu/ bionic-security main restricted universe
-deb http://archive.ubuntu.com/ubuntu/ bionic-updates main restricted universe
-EOF
+# Remove snap
+apt -y purge snapd
+apt-mark hold snapd
 
 # Add missing repositories
-add-apt-repository -y ppa:webupd8team/atom
+add-apt-repository -y ppa:x-psoud/cbreleases
+add-apt-repository -y ppa:mozillateam/ppa
+
+# Prioritize Mozilla Team repository for Firefox
+cat << EOF > /etc/apt/preferences.d/mozilla-firefox
+Package: firefox*
+Pin: release o=LP-PPA-mozillateam
+Pin-Priority: 1001
+EOF
+
+# Add repository for Visual Studio Code
+apt install -y wget gpg apt-transport-https curl
+wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+install -D -o root -g root -m 644 microsoft.gpg /usr/share/keyrings/microsoft.gpg
+rm -f microsoft.gpg
+
+cat << EOF > /etc/apt/sources.list.d/vscode.sources
+Types: deb
+URIs: https://packages.microsoft.com/repos/code
+Suites: stable
+Components: main
+Architectures: amd64,arm64,armhf
+Signed-By: /usr/share/keyrings/microsoft.gpg
+EOF
+
+# Add repository for Jetbrains IDEs
+curl -s https://s3.eu-central-1.amazonaws.com/jetbrains-ppa/0xA6E8698A.pub.asc | gpg --dearmor > jetbrains-ppa-archive-keyring.gpg
+install -D -o root -g root -m 644 jetbrains-ppa-archive-keyring.gpg /usr/share/keyrings/jetbrains-ppa-archive-keyring.gpg
+rm -f jetbrains-ppa-archive-keyring.gpg
+
+cat << EOF > /etc/apt/sources.list.d/jetbrains.sources
+Types: deb
+URIs: http://jetbrains-ppa.s3-website.eu-central-1.amazonaws.com
+Suites: any
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/jetbrains-ppa-archive-keyring.gpg
+EOF
 
 # Update packages list
-apt-get -y update
-
-# Purge extra packages
-apt-get -y autoremove --purge libreoffice\* thunderbird example-content gimp inkscape shotwell webbrowser-app simple-scan vino remmina transmission\* evolution gnome-calendar brasero cheese rhythmbox totem
+apt -y update
 
 # Upgrade everything if needed
-apt-get -y upgrade
+apt -y upgrade
+
 
 # ----- Install software from Ubuntu repositories -----
 
 # Compilers
-apt-get -y install gcc-5 g++-5 openjdk-8-jdk openjdk-8-source cmake
+apt -y install build-essential gcc-13 g++-13 openjdk-21-jdk openjdk-21-source kotlin
 
 # Editors and IDEs
-apt-get -y install codeblocks codeblocks-contrib emacs geany geany-plugins
-apt-get -y install gedit vim-gnome vim kate kdevelop nano
-apt-get -y install atom
-apt-get -y install idle-python2.7 idle-python3.6
-
-# Debuggers
-apt-get -y install ddd libappindicator1 libindicator7 libvte9 valgrind visualvm
+apt -y install codeblocks codeblocks-contrib emacs geany geany-plugins
+apt -y install gedit vim-gtk3 kate code
+apt -y install intellij-idea-community pycharm-community clion
 
 # Interpreters
-apt-get -y install python2.7 python3.6 ruby pypy
+apt -y install pypy3 python3 python-is-python3
 
 # Documentation
-apt-get -y install stl-manual openjdk-8-doc python2.7-doc python3.6-doc
+apt -y install zeal openjdk-21-doc pypy3-doc python3-doc
+mkdir -p $HOME/.local/share/Zeal/Zeal/docsets/
+curl -fL http://newyork.kapeli.com/feeds/C++.tgz | tar -xvz -C $HOME/.local/share/Zeal/Zeal/docsets/
+curl -fL http://newyork.kapeli.com/feeds/Java.tgz | tar -xvz -C $HOME/.local/share/Zeal/Zeal/docsets/
+curl -fL http://newyork.kapeli.com/feeds/Python_3.tgz | tar -xvz -C $HOME/.local/share/Zeal/Zeal/docsets/
+
+# Debuggers
+apt -y install ddd gdb valgrind
 
 # Other Software
-apt-get -y install firefox konsole mc goldendict gnome-calculator axel
+apt -y install firefox
 
 
 # ----- Install software not found in Ubuntu repositories -----
-cd /tmp/
-
-
-# CPP Reference
-axel http://upload.cppreference.com/mwiki/images/7/78/html_book_20151129.zip
-unzip html_book_20151129.zip -d /opt/cppref
-
-# Visual Studio Code
-apt-get -y install git
-wget -O vscode-amd64.deb https://vscode-update.azurewebsites.net/latest/linux-deb-x64/stable
-dpkg -i vscode-amd64.deb
-su $USER -c "mkdir -p $HOME/.config/Code/User"
 
 # Visual Studio Code - extensions
 su $USER -c "mkdir -p $HOME/.vscode/extensions"
 su $USER -c "HOME=$HOME code --user-data-dir=$HOME/.config/Code/ --install-extension ms-vscode.cpptools"
-su $USER -c "HOME=$HOME code --user-data-dir=$HOME/.config/Code/ --install-extension georgewfraser.vscode-javac"
-su $USER -c "HOME=$HOME code --user-data-dir=$HOME/.config/Code/ --install-extension magicstack.MagicPython"
+su $USER -c "HOME=$HOME code --user-data-dir=$HOME/.config/Code/ --install-extension ms-python.python"
+su $USER -c "HOME=$HOME code --user-data-dir=$HOME/.config/Code/ --install-extension redhat.java"
+su $USER -c "HOME=$HOME code --user-data-dir=$HOME/.config/Code/ --install-extension vscjava.vscode-java-debug"
 
-# netbeans
-axel https://download.netbeans.org/netbeans/8.2/final/bundles/netbeans-8.2-javase-linux.sh
-chmod +x ./netbeans-8.2-javase-linux.sh
-./netbeans-8.2-javase-linux.sh --silent
-
-# Idea
-axel https://download.jetbrains.com/idea/ideaIC-2018.3.tar.gz
-tar xzvf ideaIC-2018.3.tar.gz -C /opt/
-
-# PyCharm
-axel https://download.jetbrains.com/python/pycharm-community-2018.3.tar.gz
-tar xzvf pycharm-community-2018.3.tar.gz -C /opt/
-
-
-# Eclipse 4.7 and CDT plugins
-axel http://eclipse.mirror.rafal.ca/technology/epp/downloads/release/oxygen/R/eclipse-java-oxygen-R-linux-gtk-x86_64.tar.gz
-tar xzvf eclipse-java-oxygen-R-linux-gtk-x86_64.tar.gz -C /opt/
-mv /opt/eclipse /opt/eclipse-4.7
-wget -O pydev.zip https://sourceforge.net/projects/pydev/files/pydev/PyDev%205.8.0/PyDev%205.8.0.zip/download
-unzip pydev.zip -d /opt/eclipse-4.7/dropins
-/opt/eclipse-4.7/eclipse -application org.eclipse.equinox.p2.director -noSplash -repository http://download.eclipse.org/releases/oxygen \
+# Eclipse 2025-09 and CDT plugins
+curl -fL https://eclipse.mirror.rafal.ca/technology/epp/downloads/release/2025-09/R/eclipse-java-2025-09-R-linux-gtk-x86_64.tar.gz | tar -xvz -C /opt/
+/opt/eclipse/eclipse -application org.eclipse.equinox.p2.director -noSplash -repository https://download.eclipse.org/releases/2025-09 \
 -installIUs \
 org.eclipse.cdt.feature.group,\
 org.eclipse.cdt.build.crossgcc.feature.group,\
@@ -114,163 +126,36 @@ org.eclipse.linuxtools.valgrind.feature.group,\
 org.eclipse.linuxtools.profiling.feature.group,\
 org.eclipse.remote.core,\
 org.eclipse.remote.feature.group
-ln -s /opt/eclipse-4.7/eclipse /usr/bin/eclipse
+ln -s /opt/eclipse/eclipse /usr/bin/eclipse
 
-# Sublime Text 3
-axel https://download.sublimetext.com/sublime-text_build-3126_amd64.deb
-dpkg -i sublime-text_build-3126_amd64.deb
-# Atom
-apm install atom-beautify autocomplete-python autocomplete-java language-cpp14
+# Activate Clion
+mkdir -p $HOME/.config/JetBrains/CLion2025.2/
+(
+    printf '\xFF\xFF'
+    echo -en "<certificate-key>\nEVFXPJNEWB-eyJsaWNlbnNlSWQiOiJFVkZYUEpORVdCIiwibGljZW5zZWVOYW1lIjoiSW50ZXJuYXRpb25hbCBDb2xsZWdpYXRlIFByb2dyYW1taW5nIENvbnRlc3QiLCJsaWNlbnNlZVR5cGUiOiJDT01NRVJDSUFMIiwiYXNzaWduZWVOYW1lIjoiIiwiYXNzaWduZWVFbWFpbCI6IiIsImxpY2Vuc2VSZXN0cmljdGlvbiI6IkV2YWx1YXRpb24gcHVycG9zZSBvbmx5IiwiY2hlY2tDb25jdXJyZW50VXNlIjpmYWxzZSwicHJvZHVjdHMiOlt7ImNvZGUiOiJDTCIsInBhaWRVcFRvIjoiMjAyNi0wOC0wOSIsImV4dGVuZGVkIjpmYWxzZX0seyJjb2RlIjoiUFNJIiwicGFpZFVwVG8iOiIyMDI2LTA4LTA5IiwiZXh0ZW5kZWQiOnRydWV9LHsiY29kZSI6IlBSUiIsInBhaWRVcFRvIjoiMjAyNi0wOC0wOSIsImV4dGVuZGVkIjp0cnVlfSx7ImNvZGUiOiJQQ1dNUCIsInBhaWRVcFRvIjoiMjAyNi0wOC0wOSIsImV4dGVuZGVkIjp0cnVlfV0sIm1ldGFkYXRhIjoiMDMyMDI1MDgxNUNTQU4wMDAwMDhYMDFPU0NWIiwiaGFzaCI6IlRSSUFMOjkwNDk3MzA4OCIsImdyYWNlUGVyaW9kRGF5cyI6MywiYXV0b1Byb2xvbmdhdGVkIjpmYWxzZSwiaXNBdXRvUHJvbG9uZ2F0ZWQiOmZhbHNlLCJ0cmlhbCI6dHJ1ZSwiYWlBbGxvd2VkIjp0cnVlfQ==-IAfSHXZQFw/Z743mx6drVL1wOx+zihCBAE+fQYGSmHziG4MBeUG0ZNkcPhSePi+0lcjMCNd3Ad7fzPzA4Dd4hTCxNDAJAD/swepPHdPDwEyp9OBmXQsliGF5aiHH3fZO2L4yXqvV+XnTAcVa0mLV3BoK/sLxa4/aY3W2PaI/HHf/SOe1xXOIdNxL145ajjE/2U38IakiEODSDflAZw644xKIPiY4TwS+qkEVDDM01JY4OdTXoWCku6L/ZdFTLm0ps0UT/cUFyA8wPG0zRPpFwVs+p6OlBlOUYOzl9uNHTR8/wLwXhFKvX5kyE5m5veCGmA9oYlPtFZtfksrdXgDPvg==-MIIETDCCAjSgAwIBAgIBETANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA1KZXRQcm9maWxlIENBMB4XDTI0MDkyMDEyMTEyN1oXDTI2MDkyMjEyMTEyN1owHzEdMBsGA1UEAwwUcHJvZDJ5LWZyb20tMjAyNDA5MjAwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC7SH/XcUoMwkDi8JJPzXWWHWFdOZdrP2Dqkz2W8iUi650cwz2vdPEd0tMzosLAj7ifkFEHUyiuEcL//q9d9Op7ZsV23lpPXX8tFMLFwugoQ9D8jDLT/XP9pp/YukWkKF5jpNbaCvsVQkDdYkArBkYvhH3aN4v9BkEsXahfgLLOPe4IG2FDJNf9R4to9V1vt+m2UVJB0zV4a/sVMKUZLgqKmKKKOKoLrE3OjBlZlb+Q0z2N5dsW0hDEVRFGmBUAbHN/mp44MMMvEIFKfoLIGpgic92P2O6uFh75PI7mcultL6yuR48ajErx8CjjQEGOSnoq/8hD+yVE+6GW2gJa2CPvAgMBAAGjgZkwgZYwCQYDVR0TBAIwADAdBgNVHQ4EFgQUb5NERj05GyNerQ/Mjm9XH8HXtLIwSAYDVR0jBEEwP4AUo562SGdCEjZBvW3gubSgUouX8bOhHKQaMBgxFjAUBgNVBAMMDUpldFByb2ZpbGUgQ0GCCQDSbLGDsoN54TATBgNVHSUEDDAKBggrBgEFBQcDATALBgNVHQ8EBAMCBaAwDQYJKoZIhvcNAQELBQADggIBALq6VfVUjmPI3N/w0RYoPGFYUieCfRO0zVvD1VYHDWsN3F9buVsdudhxEsUb8t7qZPkDKTOB6DB+apgt2ZdKwok8S0pwifwLfjHAhO3b+LUQaz/VmKQW8gTOS5kTVcpM0BY7UPF8cRBqxMsdUfm5ejYk93lBRPBAqntznDY+DNc9aXOldFiACyutB1/AIh7ikUYPbpEIPZirPdAahroVvfp2tr4BHgCrk9z0dVi0tk8AHE5t7Vk4OOaQRJzy3lST4Vv6Mc0+0z8lNa+Sc3SVL8CrRtnTAs7YpD4fpI5AFDtchNrgFalX+BZ9GLu4FDsshVI4neqV5Jd5zwWPnwRuKLxsCO/PB6wiBKzdapQBG+P9z74dQ0junol+tqxd7vUV/MFsR3VwVMTndyapIS+fMoe+ZR5g+y44R8C7fXyVE/geg+JXQKvRwS0C5UpnS5FcGk+61b0e4U7pwO20RlwhEFHLSaP61p2TaVGo/TQtT/fWmrtV+HegAv9P3X3Se+xIVtJzQsk8QrB/w52IB3FKiAKl/KRn1egbMIs4uoNAkqNZ9Ih2P1NpiQnONFmkiAgeynJ+0FPykKdJQbV3Mx44jkaHIif4aFReTsYX1WUBNu/QerZRjn4FVSHRaZPSR5Oi82Wz0Nj7IY9ocTpLnXFrqkb/Kt3S6B9s2Kol3Lr1ElYA" \
+    | iconv -f UTF-8 -t UCS2 -
+) > $HOME/.config/JetBrains/CLion2025.2/clion.key
+
 
 # ----- Create desktop entries -----
 
-cd /usr/share/applications/
-
-cat << EOF > netbeans-8.2.desktop
-[Desktop Entry]
-Encoding=UTF-8
-Name=NetBeans IDE 8.2
-Comment=The Smarter Way to Code
-Exec=/usr/local/netbeans-8.2/bin/netbeans --jdkhome  /usr/lib/jvm/java-8-openjdk-amd64/
-Icon=/usr/local/netbeans-8.2/nb/netbeans.png
-Categories=Application;Development;Java;IDE
-Version=1.0
-Type=Application
-Terminal=0
-EOF
-
-cat << EOF > idea.desktop
+cat << EOF > /usr/share/applications/eclipse.desktop
 [Desktop Entry]
 Type=Application
-Name=Intellij IDEA
-Comment=Intellij IDEA
-Icon=/opt/idea-IC-183.4284.148/bin/idea.png
-Exec=/opt/idea-IC-183.4284.148/bin/idea.sh
-Terminal=false
-Categories=IDE;Intellij;IDEA;Code;Java;
-EOF
-
-cat << EOF > pycharm.desktop
-[Desktop Entry]
-Type=Application
-Name=PyCharm
-Comment=PyCharm
-Icon=/opt/pycharm-community-2018.3/bin/pycharm.png
-Exec=/opt/pycharm-community-2018.3/bin/pycharm.sh
-Terminal=false
-Categories=IDE;PyCharm;Code;Python;
-EOF
-
-
-cat << EOF > python3.6-doc.desktop
-[Desktop Entry]
-Type=Application
-Name=Python 3.6 Documentation
-Comment=Python 3.6 Documentation
-Icon=firefox
-Exec=firefox /usr/share/doc/python3.6/html/index.html
-Terminal=false
-Categories=Documentation;Python3.6;
-EOF
-
-cat << EOF > python2.7-doc.desktop
-[Desktop Entry]
-Type=Application
-Name=Python 2.7 Documentation
-Comment=Python 2.7 Documentation
-Icon=firefox
-Exec=firefox /usr/share/doc/python2.7/html/index.html
-Terminal=false
-Categories=Documentation;Python2.7;
-EOF
-
-cat << EOF > eclipse.desktop
-[Desktop Entry]
-Type=Application
-Name=Eclipse Oxygen
+Name=Eclipse
 Comment=Eclipse Integrated Development Environment
-Icon=/opt/eclipse-4.7/icon.xpm
+Icon=/opt/eclipse/icon.xpm
 Exec=eclipse
 Terminal=false
 Categories=Development;IDE;Java;
 EOF
 
-cat << EOF > cpp-doc.desktop
-[Desktop Entry]
-Type=Application
-Name=C++ Documentation
-Comment=C++ Documentation
-Icon=firefox
-Exec=firefox /opt/cppref/reference/en/index.html
-Terminal=false
-Categories=Documentation;C++;
-EOF
 
-cat << EOF > java-doc.desktop
-[Desktop Entry]
-Type=Application
-Name=Java Documentation
-Comment=Java Documentation
-Icon=firefox
-Exec=firefox /usr/share/doc/openjdk-8-doc/api/index.html
-Terminal=false
-Categories=Documentation;Java;
-EOF
-
-cat << EOF > stl-manual.desktop
-[Desktop Entry]
-Type=Application
-Name=STL Manual
-Comment=STL Manual
-Icon=firefox
-Exec=firefox /usr/share/doc/stl-manual/html/index.html
-Terminal=false
-Categories=Documentation;STL;
-EOF
-
-mkdir -p "$HOME/Desktop/Editors & IDEs"
-mkdir -p "$HOME/Desktop/Utils"
-mkdir -p "$HOME/Desktop/Docs"
-
-chown $USER "$HOME/Desktop/Editors & IDEs"
-chown $USER "$HOME/Desktop/Utils"
-chown $USER "$HOME/Desktop/Docs"
-
-# Copy Editors and IDEs
-for i in gedit codeblocks emacs25 geany org.kde.kate sublime_text eclipse code vim gvim org.kde.kdevelop idea idle-python2.7 idle-python3.6 pycharm atom netbeans-8.2
-do
-    cp "$i.desktop" "$HOME/Desktop/Editors & IDEs"
-done
-
-# Copy Docs
-for i in cpp-doc stl-manual java-doc python2.7-doc python3.6-doc
-do
-    cp "$i.desktop" "$HOME/Desktop/Docs"
-done
-
-# Copy Utils
-for i in ddd org.gnome.Calculator gnome-terminal mc org.kde.konsole visualvm goldendict
-do
-    cp "$i.desktop" "$HOME/Desktop/Utils"
-done
-
-chmod a+x "$HOME/Desktop/Editors & IDEs"/*
-chmod a+x "$HOME/Desktop/Utils"/*
-chmod a+x "$HOME/Desktop/Docs"/*
+# ----- Copy wallpaper -----
+cp files/wallpaper.png /opt/wallpaper.png
 
 
-# Set desktop settings
-apt-get install -y xvfb
-if [ -z $LIVE_BUILD ]
-then
-    cp live/files/wallpaper.png /opt/wallpaper.png
-    cp live/files/C++.sublime-package /opt/sublime_text/Packages
-    mkdir -p /usr/share/dictd
-    cp live/files/dicts/* /usr/share/dictd
-fi
-
-xvfb-run gsettings set org.gnome.desktop.background primary-color "#000000000000"
-xvfb-run gsettings set org.gnome.desktop.background picture-options "scaled"
-xvfb-run gsettings set org.gnome.desktop.background picture-uri "file:///opt/wallpaper.png"
-
-echo "Done!"
+# ----- Cleanup -----
+apt -y autoremove
+apt -y clean
+rm -rf /tmp/*
